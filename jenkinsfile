@@ -1,0 +1,141 @@
+pipeline{
+    agent any 
+
+    environment{
+         CUSTOM_DIR="/var/lib/jenkins/workspace/appcod/" 
+         CUSTOM_DIR2="/var/lib/jenkins/workspace/tagch/"
+         GIT_BRANCH="main"
+         GIT_URL="https://github.com/bawa0017/appcode.git"
+         IMAGE_NAME="273354639531.dkr.ecr.ap-southeast-1.amazonaws.com/bawa0017"
+         IMAGE_TAG1="backend-${BUILD_NUMBER}"
+         IMAGE_TAG2="frontend-${BUILD_NUMBER}"
+         AWS_REGION="ap-southeast-1"
+         ECR_URL="273354639531.dkr.ecr.ap-southeast-1.amazonaws.com/bawa0017"
+         GIT_YAML_URL="git@github.com:bawa0017/appdeploy.git"
+         ARGOCD_SERVER="a1de182c5aaaf43ecba98ff0d7dbd0e6-48046833.ap-southeast-1.elb.amazonaws.com"
+         NAMESPACE="test01"
+         MANIFEST_PATH=""
+         K8S_SERVER="https://E71F612855E14C16CE63003FEE01768B.gr7.ap-southeast-1.eks.amazonaws.com"
+         
+    }
+
+    stages{
+        stage("clone repo frontend"){
+            steps{
+                dir("${CUSTOM_DIR}"){
+                    git (
+                        branch: "${GIT_BRANCH}",
+                        url:"${GIT_URL}"
+                    )
+                }
+                }
+            }
+        stage("backend build and tag image"){
+            steps{
+                dir("${CUSTOM_DIR}"){
+                    sh '''
+                        cd backend
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG1}  .
+                    '''
+                    }
+                
+            }
+        }   
+        stage("backend login and push"){
+            steps{
+                dir("${CUSTOM_DIR}"){
+
+                 withAWS(credentials: "aws-cred",region:"${AWS_REGION}") {
+                   sh '''
+                     aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_URL}
+                      docker push ${IMAGE_NAME}:${IMAGE_TAG1}
+                       '''
+            }
+
+                }
+            }
+        }
+        stage("frontend build and tag image"){
+            steps{
+                dir("${CUSTOM_DIR}"){
+                    sh ''' 
+                    cd frontend
+                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG2}  .
+                    '''
+                    }
+                
+            }
+        }   
+        stage("frontend login and push"){
+            steps{
+                dir("${CUSTOM_DIR}"){
+                 withAWS(credentials: "aws-cred",region:"${AWS_REGION}") {
+                sh '''
+                    cd frontend
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_URL}
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG2} 
+                       '''
+                       
+            }
+
+                }
+            }
+        }  
+        stage("change images tag"){
+            steps{
+                dir("${CUSTOM_DIR2}"){
+                withCredentials([sshUserPrivateKey(credentialsId: 'ssh-key',keyFileVariable: 'SSH_KEY')]){
+                     sh '''
+      GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git clone ${GIT_YAML_URL}
+      cd appdeploy
+      sed -i "s#image: bawa0017/practice:.*#image: ${IMAGE_NAME}:${IMAGE_TAG1}#" backend.yml
+      sed -i "s#image: bawa0017/practice:.*#image: ${IMAGE_NAME}:${IMAGE_TAG2}#" frontend.yml
+      if git diff --quiet; then
+      echo "✅ No changes in YAMLs. Skipping commit & push."
+  else
+    echo "🔄 Changes detected, committing..."
+      git add .
+      git commit -m "Update image tag"
+      GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git push origin main
+      fi
+    '''
+                }
+                }
+
+            }
+        }
+        stage("Deploy with argoCD"){
+            steps{
+              withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-cred']]) {
+              withCredentials([string(credentialsId: 'ARGOCD_TOKEN', variable: 'ARGOCD_TOKEN1')]){
+               sh '''
+                echo "🚀 Preparing namespace ${NAMESPACE} ..."
+aws eks update-kubeconfig --region ${AWS_REGION} --name my-cluster1
+
+kubectl get ns ${NAMESPACE} || kubectl create ns ${NAMESPACE}
+
+echo "🚀 Logging into ArgoCD..."
+argocd login a1de182c5aaaf43ecba98ff0d7dbd0e6-48046833.ap-southeast-1.elb.amazonaws.com:443 \
+  --username admin \
+  --password ${ARGOCD_TOKEN1} \
+  --insecure
+APP_NAME="test01"
+
+# Check sync status
+STATUS=$(argocd app get $APP_NAME -o json | jq -r '.status.sync.status')
+echo "Current sync status: $STATUS"
+
+if [ "$STATUS" != "Synced" ]; then
+    echo "🔄 App is out of sync. Syncing..."
+    argocd app sync $APP_NAME
+    argocd app wait $APP_NAME --health --timeout 300
+else
+    echo "✅ App is already synced. Skipping sync."
+fi
+            '''
+              }
+              }
+            }
+        }
+        }
+    }
