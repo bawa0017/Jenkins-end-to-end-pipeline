@@ -11,7 +11,7 @@ pipeline{
          IMAGE_TAG2="frontend-${BUILD_NUMBER}"
          AWS_REGION="ap-southeast-1"
          ECR_URL="273354639531.dkr.ecr.ap-southeast-1.amazonaws.com/bawa0017"
-         GIT_YAML_URL="git@github.com:bawa0017/appdeploy.git"
+         GIT_YAML_URL="https://github.com/bawa0017/kubernetes-Deployment-Project.git"
          ARGOCD_SERVER="a1de182c5aaaf43ecba98ff0d7dbd0e6-48046833.ap-southeast-1.elb.amazonaws.com"
          NAMESPACE="test01"
          MANIFEST_PATH=""
