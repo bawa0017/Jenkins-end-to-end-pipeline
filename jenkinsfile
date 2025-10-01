@@ -91,9 +91,9 @@ pipeline{
       sed -i "s#image: bawa0017/practice:.*#image: ${IMAGE_NAME}:${IMAGE_TAG1}#" backend.yml
       sed -i "s#image: bawa0017/practice:.*#image: ${IMAGE_NAME}:${IMAGE_TAG2}#" frontend.yml
       if git diff --quiet; then
-      echo "✅ No changes in YAMLs. Skipping commit & push."
+      echo "No changes in YAMLs. Skipping commit & push."
   else
-    echo "🔄 Changes detected, committing..."
+    echo " Changes detected, committing..."
       git add .
       git commit -m "Update image tag"
       GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=no" git push origin main
@@ -109,12 +109,12 @@ pipeline{
               withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-cred']]) {
               withCredentials([string(credentialsId: 'ARGOCD_TOKEN', variable: 'ARGOCD_TOKEN1')]){
                sh '''
-                echo "🚀 Preparing namespace ${NAMESPACE} ..."
+                echo " Preparing namespace ${NAMESPACE} ..."
 aws eks update-kubeconfig --region ${AWS_REGION} --name my-cluster1
 
 kubectl get ns ${NAMESPACE} || kubectl create ns ${NAMESPACE}
 
-echo "🚀 Logging into ArgoCD..."
+echo " Logging into ArgoCD..."
 argocd login a1de182c5aaaf43ecba98ff0d7dbd0e6-48046833.ap-southeast-1.elb.amazonaws.com:443 \
   --username admin \
   --password ${ARGOCD_TOKEN1} \
@@ -126,11 +126,11 @@ STATUS=$(argocd app get $APP_NAME -o json | jq -r '.status.sync.status')
 echo "Current sync status: $STATUS"
 
 if [ "$STATUS" != "Synced" ]; then
-    echo "🔄 App is out of sync. Syncing..."
+    echo " App is out of sync. Syncing..."
     argocd app sync $APP_NAME
     argocd app wait $APP_NAME --health --timeout 300
 else
-    echo "✅ App is already synced. Skipping sync."
+    echo " App is already synced. Skipping sync."
 fi
             '''
               }
